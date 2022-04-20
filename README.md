@@ -16,12 +16,4 @@
 
  This tutorial will act as step-by-step guide in helping you to understand Knative starting with setup, understanding fundamentals concepts such as service, configuration, revision etc., and finally deploying some use cases which could help deploying serverless applications.
 
- This content is brought to you by [Red Hat Developer Program](http://developers.redhat.com) - Register today!
-
-## Devlopment Site
-
- If you like to try the latest development updates,check the [staging site](https://redhat-developer-docs.github.io/knative-tutorial-staging).
-
-## Contributing
-
- Please refer to the [how to contribute?](./CONTRIBUTING.md) on how you can contribute to the tutorial
+ The following content is based from the [Red Hat Developer Program](http://developers.redhat.com) - Register today!

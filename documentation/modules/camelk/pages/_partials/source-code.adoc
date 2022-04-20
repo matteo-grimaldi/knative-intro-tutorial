@@ -1,9 +1,0 @@
-#tag::camel-k-demos[]
-All the demo sources that will be used in the chapters of this module are available under `pass:[$TUTORIAL_HOME]/{camelk-repo}` folder.
-
-[.console-input]
-[source,bash,subs="+macros,+attributes"]
------
-cp pass:[$TUTORIAL_HOME]/{camelk-repo}
------
-#end::camel-k-demos[]

@@ -1,4 +1,0 @@
-= All In One
-include::_attributes.adoc[]
-
-include::setup:partial$tutorial-dev-env.adoc[]
