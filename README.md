@@ -50,8 +50,8 @@ oc project knative-intro-demo
 
 Login to OpenShift registry
 ```bash
-podman machine init and podman machine start
-podman machine init and podman machine start
+podman machine init
+podman machine start
 
 podman login -u <user> -p <password> quay.io
 ```
@@ -101,12 +101,24 @@ time curl http://"$(oc get route rest-quarkus-jvm --template='{{ .spec.host }}')
 
 Repeat the steps compiling natively
 
+Check that GRAALVM_HOME variable is set correctly
 ```bash
 export GRAALVM_HOME=/Library/Java/JavaVirtualMachines/graalvm-ce-java11-22.1.0/Contents/Home
+```
+
+remote-* when running podman on macos
+be sure to have a sufficient podman machine by running
+```
+podman machine list
+```
+In case the machine has less than 2G, edit the file ~/.config/containers/podman/machine/qemu/podman-machine-default.json  in both cmdline and memory and start / stop the machine to upgrade the machine
+
+```bash
 
 ./mvnw clean package -X -Pnative -Dquarkus.native.remote-container-build=true -Dquarkus.native.container-runtime=podman -Dquarkus.native.native-image-xmx=8g
-#./target/greeter-runner
 
+#optionally it's possible to test locally the native build before pushing (following commands are for linux env or for building a native executable for macOs)
+#./target/greeter-runner
 #time curl http://localhost:8080
 
 podman build -f Dockerfile -t localhost/mgrimald/rest-quarkus-native
@@ -144,12 +156,11 @@ oc policy add-role-to-user \
 ### Deploy Quarkus application as Knative Serving via kn CLI
 ```bash
 #create knative service via CLI
-kn service create rest-quarkus-jvm-sl --image image-registry.openshift-image-registry.svc:5000/standard-deploy/rest-quarkus-jvm --concurrency-limit 2 --concurrency-target 90 --max-scale 4 --min-scale 0
+kn service create rest-quarkus-jvm-sl --image quay.io/mgrimald/rest-quarkus-jvm --concurrency-limit 2 --concurrency-target 90 --max-scale 4 --min-scale 0
 
-kn service create rest-quarkus-native-sl --image image-registry.openshift-image-registry.svc:5000/standard-deploy/rest-quarkus-native --concurrency-limit 2 --concurrency-target 90 --max-scale 4 --min-scale 0
+kn service create rest-quarkus-native-sl --image quay.io/mgrimald/rest-quarkus-native --concurrency-limit 2 --concurrency-target 90 --max-scale 4 --min-scale 0
 
 
-time curl $(kn route list | grep rest-sb-sl | awk '{ print $2 }')
 time curl $(kn route list | grep rest-quarkus-jvm-sl | awk '{ print $2 }')
 time curl $(kn route list | grep rest-quarkus-native-sl | awk '{ print $2 }')
 
