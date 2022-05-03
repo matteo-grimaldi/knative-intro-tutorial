@@ -90,7 +90,7 @@ podman push --tls-verify=false quay.io/mgrimald/rest-quarkus-jvm
 
 Create a new service and deployment, expose the route and test the exposed service
 ```bash
-oc new-app --image quay.io/mgrimald/rest-quarkus-jvm:latest -n knative-intro-demo
+oc new-app --image quay.io/mgrimald/rest-quarkus-jvm:latest -n knative-intro-demo -l app.openshift.io/runtime=quarkus
 
 oc expose svc/rest-quarkus-jvm
 
@@ -128,22 +128,14 @@ time curl http://localhost:8080
 podman tag localhost/mgrimald/rest-quarkus-native quay.io/mgrimald/rest-quarkus-native
 podman push --tls-verify=false quay.io/mgrimald/rest-quarkus-native
 
-oc new-app --image quay.io/mgrimald/rest-quarkus-native:latest -n knative-intro-demo
+oc new-app --image quay.io/mgrimald/rest-quarkus-native:latest -n knative-intro-demo -l app.openshift.io/runtime=quarkus
 
 oc expose svc/rest-quarkus-native
 
 time curl http://"$(oc get route rest-quarkus-native --template='{{ .spec.host }}')"
 ```
 
-### Prepare the project for serverless deployments 
-```bash
-oc new-project knative-deploy
 
-#permission to pull from standard-deploy registry
-oc policy add-role-to-user \
-    system:image-puller system:serviceaccount:knative-deploy:default \
-    --namespace=standard-deploy
-```
 ## Knative Serving
 
 ### Install Knative Serving Operator
@@ -153,23 +145,35 @@ oc policy add-role-to-user \
 - Click Create Knative Serving.
 - In the Create Knative Serving page, you can install Knative Serving using the default settings by clicking Create.
 
+### Prepare the project for serverless deployments 
+```bash
+oc new-project knative-deploy
+
+#permission to pull from standard-deploy registry
+oc policy add-role-to-user system:image-puller system:serviceaccount:knative-deploy:default --namespace=knative-intro-demo
+oc adm policy add-role-to-user edit user1 -n knative-deploy
+
+oc login -u user1 -p <password>
+```
+
 ### Deploy Quarkus application as Knative Serving via kn CLI
 ```bash
 #create knative service via CLI
-kn service create rest-quarkus-jvm-sl --image quay.io/mgrimald/rest-quarkus-jvm --concurrency-limit 2 --concurrency-target 90 --max-scale 4 --min-scale 0
+kn service create rest-quarkus-jvm-sl --image quay.io/mgrimald/rest-quarkus-jvm --concurrency-limit 2 --concurrency-target 90 --scale-max 4 --scale-min 0 -l app.openshift.io/runtime=quarkus
 
-kn service create rest-quarkus-native-sl --image quay.io/mgrimald/rest-quarkus-native --concurrency-limit 2 --concurrency-target 90 --max-scale 4 --min-scale 0
+kn service create rest-quarkus-native-sl --image quay.io/mgrimald/rest-quarkus-native --concurrency-limit 2 --concurrency-target 90 --scale-max 4 --scale-min 0 -l app.openshift.io/runtime=quarkus
 
 
 time curl $(kn route list | grep rest-quarkus-jvm-sl | awk '{ print $2 }')
 time curl $(kn route list | grep rest-quarkus-native-sl | awk '{ print $2 }')
 
-
+hey -c 50 -z 10s "$(kn route list | grep rest-quarkus-jvm-sl | awk '{ print $2 }')"
 hey -c 50 -z 10s "$(kn route list | grep rest-quarkus-native-sl | awk '{ print $2 }')"
 ```
 
 Inspect Kubernetes generated resources
 ```bash
+oc get all -n knative-deploy
 ```
 
 
@@ -178,12 +182,12 @@ Inspect Kubernetes generated resources
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: greeter
+  name: rest-quarkus-jvm
 spec:
   template:
     spec:
       containers:
-      - image: quay.io/rhdevelopers/knative-tutorial-greeter:quarkus
+      - image: quay.io/mgrimald/rest-quarkus-jvm
         livenessProbe:
           httpGet:
             path: /healthz
@@ -196,18 +200,32 @@ spec:
 ```bash
 kn service delete rest-quarkus-jvm-sl
 kn service delete rest-quarkus-native
+oc project delete knative-deploy
 ```
 
 ## Revisions and Traffic Distributions
 
 Knative always routes traffic to the **latest** revision of the service. It is possible to split the traffic amongst the available revisions.
 
-### Deploy a Knative service
+### Deploy a Knative service 
+### Prepare the project for serverless deployments 
+```bash
+oc new-project knative-revision
+oc adm policy add-role-to-user edit user1 -n knative-revision  
+
+#permission to pull from standard-deploy registry
+oc policy add-role-to-user system:image-puller system:serviceaccount:knative-revision:default --namespace=knative-intro-demo
+
+oc login -u user1 -p <password>
+```
+
+
 ```bash
 kn service create blue-green-canary \
    --image=quay.io/rhdevelopers/blue-green-canary \
    --env BLUE_GREEN_CANARY_COLOR="#6bbded" \
-   --env BLUE_GREEN_CANARY_MESSAGE="Hello"
+   --env BLUE_GREEN_CANARY_MESSAGE="Hello" \
+   -l app.openshift.io/runtime=quarkus
 ```
 
 ### Invoke the Service
@@ -231,7 +249,8 @@ Create a new revision by updating env variables for the service
 kn service update blue-green-canary \
    --image=quay.io/rhdevelopers/blue-green-canary \
    --env BLUE_GREEN_CANARY_COLOR="#5bbf45" \
-   --env BLUE_GREEN_CANARY_MESSAGE="Namaste"
+   --env BLUE_GREEN_CANARY_MESSAGE="Namaste" \
+   -l app.openshift.io/runtime=quarkus
 ```
 
 Now invoking the service again using the service URL, will show a green color browser page with greeting *Namaste*.
@@ -265,13 +284,19 @@ When Knative rolls out a new revision, it increments the `GENERATION` by *1* and
 Let us tag `blue-green-canary-00001` which shows *blue* browser page with tag name `blue`.
 
 ```
-kn service update blue-green-canary --tag=#blue-green-canary-00001#=blue
+kn service update blue-green-canary --tag=blue-green-canary-00001=blue
 ```
 
 Let us tag `blue-green-canary-00002` which shows *green* browser page with tag name `green`.
 
 ```
-kn service update blue-green-canary --tag=#blue-green-canary-00002#=green
+kn service update blue-green-canary --tag=blue-green-canary-00002=green
+```
+
+Let's check the result of tagging commands
+
+```
+kn revision list -s blue-green-canary  
 ```
 
 ## Tag Latest
@@ -302,14 +327,6 @@ Route all the traffic of service `blue-green-canary` to blue revision of the ser
 kn service update blue-green-canary --traffic blue=100,green=0,latest=0
 ```
 
-NOTE: We use the tag names to identify the revisions
-
-Let us list all revisions with tags:
-
-```
-kn revision list
-```
-
 ## Applying Canary Release Pattern
 
 Knative allows you to split the traffic between revisions in increments as small as 1%.
@@ -327,7 +344,7 @@ You will notice the browser alternating betwee green and blue color, with majori
 You should also notice that two pods are running representing both `blue` and `green`:
 
 ```
-watch "oc get pods -n knative-intro"
+watch "oc get pods -n knative-revision"
 ```
 
 ```
@@ -339,6 +356,7 @@ blue-green-canary-00002-deployment-8564bf5b5b-gtvh4   2/2     Running   0       
 ## Cleanup
 ```
 kn service delete blue-green-canary
+oc delete project knative-revision
 ```
 
 ## Knative Eventing
@@ -351,8 +369,25 @@ kn service delete blue-green-canary
 - Click Create.
 - Click Create.
 
+### Prepare the project for serverless deployments 
+```bash
+oc new-project knative-eventing-deploy
+oc adm policy add-role-to-user edit user1 -n knative-eventing-deploy 
 
-### Creating and deploying an Event Source via kn CLI
+#permission to pull from standard-deploy registry
+oc policy add-role-to-user system:image-puller system:serviceaccount:knative-eventing-deploy:default --namespace=knative-intro-demo
+
+oc login -u user1 -p <password>
+```
+
+### Creating the event sink (regular knative servicing)
+```bash
+kn service create eventinghello \
+  --concurrency-target=1 \
+  --image=quay.io/rhdevelopers/eventinghello:0.0.2
+```
+
+### Creating and deploying an Event Source via kn CLI (let's do it via console)
 
 ```bash
 kn source ping create eventinghello-ping-source \
@@ -380,12 +415,7 @@ spec:
       name: eventinghello
 ```
 
-### Creating the event sink (regular knative servicing)
-```bash
-kn service create eventinghello \
-  --concurrency-target=1 \
-  --image=quay.io/rhdevelopers/eventinghello:0.0.2
-```
+
 
 ### channel and subscribers
 ### Creating Event Channel via kn CLI
@@ -463,24 +493,29 @@ spec:
 apiVersion: eventing.knative.dev/v1
 kind: Trigger
 metadata:
-  name: hellobonjour
+  name: helloaloha
 spec:
   broker: default
   filter:
     attributes:
-      type: bonjour
+      type: aloha 
   subscriber:
     ref:
      apiVersion: serving.knative.dev/v1
      kind: Service
-     name: eventingbonjour
+     name: eventingaloha
+```
+
+## Knative Functions (https://openshift-knative.github.io/docs/docs/functions/quickstart-functions.html)
+```bash
+kn func create -l <language> -t <http|events> funcname
 ```
 
 ```bash
-stern eventing -c user-container
+kn func create -l quarkus -t http hellofunc
 ```
 
-## Knative Functions
+
 
 
 ## Cleanup OpenShift Serverless operators
