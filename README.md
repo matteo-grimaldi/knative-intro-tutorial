@@ -56,20 +56,19 @@ podman machine start
 podman login -u <user> -p <password> quay.io
 ```
 
-
 ### Build a Quarkus application
 
 Compile the application and check everything is up and running
 ```bash
 ./mvnw compile quarkus:dev
 ```
-on a different terminal
+on a different terminal test the running Quarkus service
 
 ```bash
 time curl http://localhost:8080
 ```
 
-Build the application image and test it
+Build the application image, run and test it
 
 ```bash
 ./mvnw compile package
@@ -99,31 +98,24 @@ time curl http://"$(oc get route rest-quarkus-jvm --template='{{ .spec.host }}')
 
 ### Build a Quarkus native application 
 
-Repeat the steps compiling natively
+Repeat the steps compiling natively (native compilation steps are for macOs environment, on Linux it's more straight-forward, as it's possible compile for the same arch locally)
 
 Check that GRAALVM_HOME variable is set correctly
 ```bash
 export GRAALVM_HOME=/Library/Java/JavaVirtualMachines/graalvm-ce-java11-22.1.0/Contents/Home
 ```
 
-remote-* when running podman on macos
-be sure to have a sufficient podman machine by running
+be sure to have a sufficient memory on podman machine by running
 ```
 podman machine list
 ```
-In case the machine has less than 2G, edit the file ~/.config/containers/podman/machine/qemu/podman-machine-default.json  in both cmdline and memory and start / stop the machine to upgrade the machine
+In case the machine has less than 2G, edit the file ~/.config/containers/podman/machine/qemu/podman-machine-default.json in both cmdline and memory and start / stop the machine to upgrade the machine
 
 ```bash
 
 ./mvnw clean package -X -Pnative -Dquarkus.native.remote-container-build=true -Dquarkus.native.container-runtime=podman -Dquarkus.native.native-image-xmx=8g
 
-#optionally it's possible to test locally the native build before pushing (following commands are for linux env or for building a native executable for macOs)
-#./target/greeter-runner
-#time curl http://localhost:8080
-
 podman build -f Dockerfile -t localhost/mgrimald/rest-quarkus-native
-
-time curl http://localhost:8080
 
 podman tag localhost/mgrimald/rest-quarkus-native quay.io/mgrimald/rest-quarkus-native
 podman push --tls-verify=false quay.io/mgrimald/rest-quarkus-native
@@ -134,7 +126,6 @@ oc expose svc/rest-quarkus-native
 
 time curl http://"$(oc get route rest-quarkus-native --template='{{ .spec.host }}')"
 ```
-
 
 ## Knative Serving
 
@@ -157,6 +148,12 @@ oc login -u user1 -p <password>
 ```
 
 ### Deploy Quarkus application as Knative Serving via kn CLI
+Inspect servicing documentation
+```bash
+kn service create --help
+```
+
+Create and deploy the actual services for jvm and native modes and measure response times
 ```bash
 #create knative service via CLI
 kn service create rest-quarkus-jvm-sl --image quay.io/mgrimald/rest-quarkus-jvm --concurrency-limit 2 --concurrency-target 90 --scale-max 4 --scale-min 0 -l app.openshift.io/runtime=quarkus
@@ -200,7 +197,7 @@ spec:
 ```bash
 kn service delete rest-quarkus-jvm-sl
 kn service delete rest-quarkus-native
-oc project delete knative-deploy
+oc delete project knative-deploy
 ```
 
 ## Revisions and Traffic Distributions
