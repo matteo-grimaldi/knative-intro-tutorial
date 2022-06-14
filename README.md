@@ -20,11 +20,9 @@
 
 ## Preparation
 
-### Provision and login into the environment
+Provision and login into the environment
 
-developer-sandbox
-
-Install OpenShift Serverless from OperatorHub
+### Install OpenShift Serverless and Knative CLI
 
 - From the administrator perspective, Operator -> OperatorHub.
 - In the quicksearch input form, type "Serveless".
@@ -34,9 +32,18 @@ Install OpenShift Serverless from OperatorHub
   - Select the stable channel as the Update Channel, The stable channel will enable installation of the latest stable release of the OpenShift Serverless Operator.
   - Select Automatic approval strategy.
 
+Installing kn cli is also straight-forward. 
+It is possible to either install it leveraging to you local package manager, for example on macOs 
 
+```bash
+brew install knative/client/kn
+```
 
-Login to OpenShift 
+or by accessing command line tools from OpenShift Web console and download and extract the archive.
+
+### Prepare 
+
+Login to OpenShift as regular user
 
 ```bash
 oc login -u <username> -p <password> <openshift-api-url>
@@ -44,11 +51,11 @@ oc login -u <username> -p <password> <openshift-api-url>
 
 Create a new project
 ```bash
-oc new-project knative-intro-demo
-oc project knative-intro-demo
+oc new-project standard-deployment
+oc project standard-deployment
 ```
 
-Login to OpenShift registry
+Login to external Image registry with credentials
 ```bash
 podman machine init
 podman machine start
@@ -89,8 +96,9 @@ podman push --tls-verify=false quay.io/mgrimald/rest-quarkus-jvm
 
 Create a new service and deployment, expose the route and test the exposed service
 ```bash
-oc new-app --image quay.io/mgrimald/rest-quarkus-jvm:latest -n knative-intro-demo -l app.openshift.io/runtime=quarkus
+oc new-app --image quay.io/mgrimald/rest-quarkus-jvm:latest -n standard-deployment -l app.openshift.io/runtime=quarkus
 
+#expose the route externally
 oc expose svc/rest-quarkus-jvm
 
 time curl http://"$(oc get route rest-quarkus-jvm --template='{{ .spec.host }}')"
@@ -98,7 +106,7 @@ time curl http://"$(oc get route rest-quarkus-jvm --template='{{ .spec.host }}')
 
 ### Build a Quarkus native application 
 
-Repeat the steps compiling natively (native compilation steps are for macOs environment, on Linux it's more straight-forward, as it's possible compile for the same arch locally)
+Repeat the steps compiling natively (native compilation steps are for macOs environment, on Linux it is going to be more straight-forward, as it's possible compile for the same arch locally)
 
 Check that GRAALVM_HOME variable is set correctly
 ```bash
@@ -120,8 +128,9 @@ podman build -f Dockerfile -t localhost/mgrimald/rest-quarkus-native
 podman tag localhost/mgrimald/rest-quarkus-native quay.io/mgrimald/rest-quarkus-native
 podman push --tls-verify=false quay.io/mgrimald/rest-quarkus-native
 
-oc new-app --image quay.io/mgrimald/rest-quarkus-native:latest -n knative-intro-demo -l app.openshift.io/runtime=quarkus
+oc new-app --image quay.io/mgrimald/rest-quarkus-native:latest -n standard-deployment -l app.openshift.io/runtime=quarkus
 
+#expose the route externally
 oc expose svc/rest-quarkus-native
 
 time curl http://"$(oc get route rest-quarkus-native --template='{{ .spec.host }}')"
@@ -136,30 +145,30 @@ time curl http://"$(oc get route rest-quarkus-native --template='{{ .spec.host }
 - Click Create Knative Serving.
 - In the Create Knative Serving page, you can install Knative Serving using the default settings by clicking Create.
 
-### Prepare the project for serverless deployments 
-```bash
-oc new-project knative-deploy
-
-#permission to pull from standard-deploy registry
-oc policy add-role-to-user system:image-puller system:serviceaccount:knative-deploy:default --namespace=knative-intro-demo
-oc adm policy add-role-to-user edit user1 -n knative-deploy
-
-oc login -u user1 -p <password>
-```
-
-### Deploy Quarkus application as Knative Serving via kn CLI
-Inspect servicing documentation
+Inspect servicing creation documentation
 ```bash
 kn service create --help
 ```
 
+Please note some relevant parameters:
+
+- concurrency-limit: Hard Limit of concurrent requests to be processed by a single replica 
+- concurrency-target: Soft Limit of concurrent requests to be processed by a single replica
+- scale-max: maximum number of replicas
+- scale-min: minimum number of replicas
+
+### Prepare a new project for serverless deployments 
+```bash
+oc new-project knative-deploy
+```
+
+### Deploy Quarkus application as Knative Serving via kn CLI
+
 Create and deploy the actual services for jvm and native modes and measure response times
 ```bash
-#create knative service via CLI
-kn service create rest-quarkus-jvm-sl --image quay.io/mgrimald/rest-quarkus-jvm --concurrency-limit 2 --concurrency-target 90 --scale-max 4 --scale-min 0 -l app.openshift.io/runtime=quarkus
-
-kn service create rest-quarkus-native-sl --image quay.io/mgrimald/rest-quarkus-native --concurrency-limit 2 --concurrency-target 90 --scale-max 4 --scale-min 0 -l app.openshift.io/runtime=quarkus
-
+#create knative services via CLI
+kn service create rest-quarkus-jvm-sl --image quay.io/mgrimald/rest-quarkus-jvm --concurrency-target 90 --scale-max 4 --scale-min 0 -l app.openshift.io/runtime=quarkus
+kn service create rest-quarkus-native-sl --image quay.io/mgrimald/rest-quarkus-native --concurrency-target 90 --scale-max 4 --scale-min 0 -l app.openshift.io/runtime=quarkus
 
 time curl $(kn route list | grep rest-quarkus-jvm-sl | awk '{ print $2 }')
 time curl $(kn route list | grep rest-quarkus-native-sl | awk '{ print $2 }')
@@ -172,7 +181,6 @@ Inspect Kubernetes generated resources
 ```bash
 oc get all -n knative-deploy
 ```
-
 
 ### Deploy Quarkus application as Knative Serving applying YAML
 ```yaml
@@ -210,12 +218,8 @@ Knative always routes traffic to the **latest** revision of the service. It is p
 oc new-project knative-revision
 oc adm policy add-role-to-user edit user1 -n knative-revision  
 
-#permission to pull from standard-deploy registry
-oc policy add-role-to-user system:image-puller system:serviceaccount:knative-revision:default --namespace=knative-intro-demo
-
 oc login -u user1 -p <password>
 ```
-
 
 ```bash
 kn service create blue-green-canary \
@@ -278,15 +282,10 @@ When Knative rolls out a new revision, it increments the `GENERATION` by *1* and
 
 ### Tag by color name
 
-Let us tag `blue-green-canary-00001` which shows *blue* browser page with tag name `blue`.
+Let us tag `blue-green-canary-00001` which shows *blue* browser page with tag name `blue` and tag `blue-green-canary-00002` which shows *green* browser page with tag name `green`.
 
 ```
 kn service update blue-green-canary --tag=blue-green-canary-00001=blue
-```
-
-Let us tag `blue-green-canary-00002` which shows *green* browser page with tag name `green`.
-
-```
 kn service update blue-green-canary --tag=blue-green-canary-00002=green
 ```
 
@@ -310,7 +309,6 @@ kn revision list -s blue-green-canary
 
 As *green* happend to be latest revision it has been tagged with name `lastest` in addition to `green`.
 
-Let us use the tag names for easier identification of the revision and perform traffic distribution amongst them.
 
 ## Applying Blue-Green Deployment Pattern
 
@@ -356,7 +354,7 @@ kn service delete blue-green-canary
 oc delete project knative-revision
 ```
 
-## Knative Eventing
+## Knative Eventing - Sink and Sources
 
 ### Install Knative Eventing Operator
 - In the Administrator perspective, navigate to Operators → Installed Operators.
@@ -371,21 +369,24 @@ oc delete project knative-revision
 oc new-project knative-eventing-deploy
 oc adm policy add-role-to-user edit user1 -n knative-eventing-deploy 
 
-#permission to pull from standard-deploy registry
-oc policy add-role-to-user system:image-puller system:serviceaccount:knative-eventing-deploy:default --namespace=knative-intro-demo
-
 oc login -u user1 -p <password>
 ```
 
 ### Creating the event sink (regular knative servicing)
+To test and realize a knative servicing sample architecture a sink, a regular knative servicing application, is required. 
+In this case we deploy a very simple knative service
 ```bash
 kn service create eventinghello \
   --concurrency-target=1 \
-  --image=quay.io/rhdevelopers/eventinghello:0.0.2
+  --scale-window 30s \
+  --image=quay.io/rhdevelopers/eventinghello:0.0.2 \
+  -l app.openshift.io/runtime=quarkus
 ```
 
-### Creating and deploying an Event Source via kn CLI (let's do it via console)
+### Creating and deploying an Event Source
+It is possibile to leverage the web console to simply deploy and configure a basic knative eventing resource: an event source. This knative resource simply sends data on a regular configured basis (in this case every minute).
 
+Another way to deploy this is to leverage on the usual kn cli
 ```bash
 kn source ping create eventinghello-ping-source \
   --schedule "*/2 * * * *" \
@@ -393,10 +394,9 @@ kn source ping create eventinghello-ping-source \
   --sink ksvc:eventinghello
 ```
 
-ksvc stands for the reference to the knative event sink (basically a regular knative servicing service)
+please note that "ksvc" allows to specify the reference to the event sink to connect the source to it.
 
-### Creating and deploying an Event Source applying YAML
-
+or to use a YAML template
 ```yaml
 apiVersion: sources.knative.dev/v1
 kind: PingSource
@@ -412,16 +412,14 @@ spec:
       name: eventinghello
 ```
 
-
-
-### channel and subscribers
+## Knative Eventing - Channel and subscribers
 ### Creating Event Channel via kn CLI
-
+Also to create a channel, it is possible to use the Web Console, or leverage on the simple kn cli as below
 ```bash
 kn channel create eventinghello-ch
 ```
+or else by YAML File
 
-### Creating Event Channel applying YAML
 ```yaml
 apiVersion: messaging.knative.dev/v1
 kind: Channel
@@ -429,11 +427,14 @@ metadata:
   name: eventinghello-ch 
 ```
 
-### Creating the event sink (regular knative servicing)
+we add a clone service to the one already deployed
+
 ```bash
 kn service create eventinghellob \
   --concurrency-target=1 \
-  --image=quay.io/rhdevelopers/eventinghello:0.0.2
+  --scale-window 30s \
+  --image=quay.io/rhdevelopers/eventinghello:0.0.2 \
+  -l app.openshift.io/runtime=quarkus
 ```
 
 ### Creating the subscritions and verify them
@@ -449,42 +450,32 @@ kn subscription create eventinghellob-sub \
 kn subscription list
 ```
 
-### triggers and brokers
+## Knative Eventing - Triggers and brokers
+
+### Deploy a broker
 ```bash
 kn broker create default
 ```
 
-### deploy sink services
+### Deploy sink services
 ```bash
 kn service create eventingaloha \
   --concurrency-target=1 \
+  --scale-window 30s \
   --revision-name=eventingaloha-v1 \
-  --image=quay.io/rhdevelopers/eventinghello:0.0.2
+  --image=quay.io/rhdevelopers/eventinghello:0.0.2\
+  -l app.openshift.io/runtime=quarkus
 
 
 kn service create eventingbonjour \
   --concurrency-target=1 \
+  --scale-window 30s \
   --revision-name=eventingbonjour-v1 \
-  --image=quay.io/rhdevelopers/eventinghello:0.0.2
+  --image=quay.io/rhdevelopers/eventinghello:0.0.2\
+  -l app.openshift.io/runtime=quarkus
 ```
 
-
-```yaml
-apiVersion: eventing.knative.dev/v1
-kind: Trigger
-metadata:
-  name: helloaloha
-spec:
-  broker: default
-  filter:
-    attributes:
-      type: aloha 
-  subscriber:
-    ref:
-     apiVersion: serving.knative.dev/v1
-     kind: Service
-     name: eventingaloha
-```
+### Deploy Triggers
 
 ```yaml
 apiVersion: eventing.knative.dev/v1
@@ -502,17 +493,66 @@ spec:
      kind: Service
      name: eventingaloha
 ```
+
+or by using kn cli
+
+```bash
+kn trigger create helloaloha \
+  --broker=default \
+  --sink=ksvc:eventingaloha \
+  --filter=type=aloha
+```
+
+```yaml
+apiVersion: eventing.knative.dev/v1
+kind: Trigger
+metadata:
+  name: hellobonjour
+spec:
+  broker: default
+  filter:
+    attributes:
+      type: bonjour 
+  subscriber:
+    ref:
+     apiVersion: serving.knative.dev/v1
+     kind: Service
+     name: eventingbonjour
+```
+
+or by using kn cli
+```bash
+kn trigger create hellobonjour \
+  --broker=default \
+  --sink=ksvc:eventingbonjour \
+  --filter=type=bonjour
+  ```
 
 ## Knative Functions (https://openshift-knative.github.io/docs/docs/functions/quickstart-functions.html)
+
+As other knative resources the kn cli allows to access the feature. For example it is possible to se all the possibilities by running
+```bash
+kn func --help
+
+```
+
+By inspecting the man for function creation
+```bash
+kn func create --help
+```
+It is possible to see that there are several available combinations and the basic syntax is 
+
 ```bash
 kn func create -l <language> -t <http|events> funcname
 ```
+
+So, to create a quarkus rest-based function is enough to position in the destination folder where to generate source code and configurations and run
 
 ```bash
 kn func create -l quarkus -t http hellofunc
 ```
 
-
+Then it will be possible to inspect and modify resources to be able to build the function by running the build/deploy commands.
 
 
 ## Cleanup OpenShift Serverless operators
