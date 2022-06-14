@@ -167,8 +167,8 @@ oc new-project knative-deploy
 Create and deploy the actual services for jvm and native modes and measure response times
 ```bash
 #create knative services via CLI
-kn service create rest-quarkus-jvm-sl --image quay.io/mgrimald/rest-quarkus-jvm --concurrency-target 90 --scale-max 4 --scale-min 0 -l app.openshift.io/runtime=quarkus
-kn service create rest-quarkus-native-sl --image quay.io/mgrimald/rest-quarkus-native --concurrency-target 90 --scale-max 4 --scale-min 0 -l app.openshift.io/runtime=quarkus
+kn service create rest-quarkus-jvm-sl --image quay.io/mgrimald/rest-quarkus-jvm --concurrency-target 90 --scale-max 4 --scale-min 0 --scale-window 30s -l app.openshift.io/runtime=quarkus
+kn service create rest-quarkus-native-sl --image quay.io/mgrimald/rest-quarkus-native --concurrency-target 90 --scale-max 4 --scale-min 0 --scale-window 30s -l app.openshift.io/runtime=quarkus
 
 time curl $(kn route list | grep rest-quarkus-jvm-sl | awk '{ print $2 }')
 time curl $(kn route list | grep rest-quarkus-native-sl | awk '{ print $2 }')
@@ -182,7 +182,7 @@ Inspect Kubernetes generated resources
 oc get all -n knative-deploy
 ```
 
-### Deploy Quarkus application as Knative Serving applying YAML
+Of course is still possible to deploy the same applications by applying the following YAML filekl
 ```yaml
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -204,7 +204,7 @@ spec:
 ### Cleanup
 ```bash
 kn service delete rest-quarkus-jvm-sl
-kn service delete rest-quarkus-native
+kn service delete rest-quarkus-native-sl
 oc delete project knative-deploy
 ```
 
