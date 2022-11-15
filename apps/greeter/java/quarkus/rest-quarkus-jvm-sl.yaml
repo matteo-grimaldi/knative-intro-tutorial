@@ -1,0 +1,15 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: rest-quarkus-jvm-sl
+spec:
+  template:
+    spec:
+      containers:
+      - image: quay.io/mgrimald/rest-quarkus-jvm
+        livenessProbe:
+          httpGet:
+            path: /healthz
+        readinessProbe:
+          httpGet:
+            path: /healthz

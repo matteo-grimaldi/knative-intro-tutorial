@@ -167,12 +167,15 @@ oc new-project knative-deploy
 Create and deploy the actual services for jvm and native modes and measure response times
 ```bash
 #create knative services via CLI
+kn service create rest-springboot-jvm-sl --image quay.io/mgrimald/rest-springboot-jvm --concurrency-target 90 --scale-max 4 --scale-min 0 --scale-window 30s 
 kn service create rest-quarkus-jvm-sl --image quay.io/mgrimald/rest-quarkus-jvm --concurrency-target 90 --scale-max 4 --scale-min 0 --scale-window 30s -l app.openshift.io/runtime=quarkus
 kn service create rest-quarkus-native-sl --image quay.io/mgrimald/rest-quarkus-native --concurrency-target 90 --scale-max 4 --scale-min 0 --scale-window 30s -l app.openshift.io/runtime=quarkus
 
+time curl $(kn route list | grep rest-springboot-jvm-sl | awk '{ print $2 }')
 time curl $(kn route list | grep rest-quarkus-jvm-sl | awk '{ print $2 }')
 time curl $(kn route list | grep rest-quarkus-native-sl | awk '{ print $2 }')
 
+hey -c 50 -z 10s "$(kn route list | grep rest-springboot-jvm-sl | awk '{ print $2 }')"
 hey -c 50 -z 10s "$(kn route list | grep rest-quarkus-jvm-sl | awk '{ print $2 }')"
 hey -c 50 -z 10s "$(kn route list | grep rest-quarkus-native-sl | awk '{ print $2 }')"
 ```
@@ -182,12 +185,13 @@ Inspect Kubernetes generated resources
 oc get all -n knative-deploy
 ```
 
-Of course is still possible to deploy the same applications by applying the following YAML filekl
+Of course is still possible to deploy the same applications by applying the following YAML file
+
 ```yaml
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: rest-quarkus-jvm
+  name: rest-quarkus-jvm-sl
 spec:
   template:
     spec:
@@ -199,10 +203,17 @@ spec:
         readinessProbe:
           httpGet:
             path: /healthz
-```          
+```     
+
+by oc apply
+
+````
+oc apply -f rest-quarkus-jvm-sl.yaml
+````
 
 ### Cleanup
 ```bash
+kn service delete rest-springboot-jvm-sl
 kn service delete rest-quarkus-jvm-sl
 kn service delete rest-quarkus-native-sl
 oc delete project knative-deploy
