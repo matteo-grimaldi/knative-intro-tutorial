@@ -400,7 +400,7 @@ It is possibile to leverage the web console to simply deploy and configure a bas
 Another way to deploy this is to leverage on the usual kn cli
 ```bash
 kn source ping create eventinghello-ping-source \
-  --schedule "*/2 * * * *" \
+  --schedule "*/1 * * * *" \
   --data '{"message": "Thanks for doing Knative Tutorial"}' \
   --sink ksvc:eventinghello
 ```
@@ -414,7 +414,7 @@ kind: PingSource
 metadata:
   name: eventinghello-ping-source
 spec:
-  schedule: "*/2 * * * *"
+  schedule: "*/1 * * * *"
   data: '{"message": "Thanks for doing Knative Tutorial"}'
   sink:  
     ref:
@@ -422,6 +422,10 @@ spec:
       kind: Service
       name: eventinghello
 ```
+
+````bash
+stern eventinghello -c user-container -n knative-eventing-deploy
+````
 
 ## Knative Eventing - Channel and subscribers
 ### Creating Event Channel via kn CLI
@@ -449,6 +453,9 @@ kn service create eventinghellob \
 ```
 
 ### Creating the subscritions and verify them
+
+We can create the subscriptions by editing the channel on the topology view, or:
+
 ```bash
 kn subscription create eventinghello-sub \
   --channel eventinghello-ch \
@@ -460,6 +467,9 @@ kn subscription create eventinghellob-sub \
 
 kn subscription list
 ```
+
+Now by selecting the previously created source, we can change the sink, and move it to the channel.
+In this way, bot services will receive the ping.
 
 ## Knative Eventing - Triggers and brokers
 
@@ -539,6 +549,45 @@ kn trigger create hellobonjour \
   --filter=type=bonjour
   ```
 
+
+Now let's create a pod to be able to send messages to the broker, let's do it with a simple yaml file:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    run: curler
+  name: curler
+spec:
+  containers:
+  - name: curler
+    image: fedora:37
+    tty: true
+```
+
+Let's get the url of the broker by using the cli
+```bash
+kubectl get broker default -o jsonpath='{.status.address.url}'
+```
+
+And the use the curler shell to send the message
+
+````
+kubectl -n knative-eventing-deploy exec -it curler -- /bin/bash
+````
+
+```bash
+curl -v "xxxx" \
+-X POST \
+-H "Ce-Id: say-hello" \
+-H "Ce-Specversion: 1.0" \
+-H "Ce-Type: aloha" \
+-H "Ce-Source: mycurl" \
+-H "Content-Type: application/json" \
+-d '{"key":"from a curl"}'
+```
+
 ## Knative Functions (https://openshift-knative.github.io/docs/docs/functions/quickstart-functions.html)
 
 As other knative resources the kn cli allows to access the feature. For example it is possible to se all the possibilities by running
@@ -565,6 +614,16 @@ kn func create -l quarkus -t http hellofunc
 
 Then it will be possible to inspect and modify resources to be able to build the function by running the build/deploy commands.
 
+Using 
+```bash
+kn func build -v
+kn func run 
+```
+it is possible to build and run the function locally. Once the functions is running, it is possible to use the CLI to test it, instead of regular curl
+
+```bash
+kn func invoke --data '{"message": "hello world!" }'
+```
 
 ## Cleanup OpenShift Serverless operators
 ```bash
