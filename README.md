@@ -145,6 +145,8 @@ time curl http://"$(oc get route rest-quarkus-native --template='{{ .spec.host }
 - Click Create Knative Serving.
 - In the Create Knative Serving page, you can install Knative Serving using the default settings by clicking Create.
 
+The resource `service.serving.knative.dev`is the main one and there are many fields that could be looked up in the documentation, but the `kn` client can provide a mean to explore options quicker and directly create services or generate yaml files to apply.
+
 Inspect servicing creation documentation
 ```bash
 kn service create --help
@@ -179,37 +181,60 @@ hey -c 50 -z 10s "$(kn route list | grep rest-springboot-jvm-sl | awk '{ print $
 hey -c 50 -z 10s "$(kn route list | grep rest-quarkus-jvm-sl | awk '{ print $2 }')"
 hey -c 50 -z 10s "$(kn route list | grep rest-quarkus-native-sl | awk '{ print $2 }')"
 ```
-
-Inspect Kubernetes generated resources
+Alternatively Knative services can be created by locally generating yaml resources and then applying it.
+For example:
 ```bash
-oc get all -n knative-deploy
+kn service create rest-quarkus-native-sl --image quay.io/mgrimald/rest-quarkus-native --concurrency-target 90 --scale-max 4 --scale-min 0 --scale-window 30s -l app.openshift.io/runtime=quarkus --target=rest-quarkus-native-sl-service.yaml
 ```
 
-Of course is still possible to deploy the same applications by applying the following YAML file
+That will generate the following YAML file
 
 ```yaml
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: rest-quarkus-jvm-sl
+  creationTimestamp: null
+  labels:
+    app.openshift.io/runtime: quarkus
+  name: rest-quarkus-native-sl
+  namespace: mgrimald-dev
 spec:
   template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/max-scale: "4"
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/target: "90"
+        autoscaling.knative.dev/window: 30s
+        client.knative.dev/updateTimestamp: "2023-03-02T21:51:46Z"
+        client.knative.dev/user-image: quay.io/mgrimald/rest-quarkus-native
+      creationTimestamp: null
+      labels:
+        app.openshift.io/runtime: quarkus
     spec:
       containers:
-      - image: quay.io/mgrimald/rest-quarkus-jvm
-        livenessProbe:
-          httpGet:
-            path: /healthz
-        readinessProbe:
-          httpGet:
-            path: /healthz
+      - image: quay.io/mgrimald/rest-quarkus-native
+        name: ""
+        resources: {}
+status: {}
 ```     
 
-by oc apply
+By `kn` CLI
+
+```
+kn service create -f rest-quarkus-native-sl-service.yaml
+```
+
+or by `oc` CLI
 
 ````
 oc apply -f rest-quarkus-jvm-sl.yaml
 ````
+
+Inspect Kubernetes generated resources
+```bash
+oc get all -n knative-deploy
+```
 
 ### Cleanup
 ```bash
